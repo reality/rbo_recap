@@ -33,9 +33,9 @@ def extractLabels = { cl, o ->
     OWLAnnotationValue val = anno.getValue()
     if(val instanceof OWLLiteral) {
       def literal = val.getLiteral()
-      if(property.isLabel()) {
-        labels << literal
-      }
+      if(property.isLabel() || property =~ /Synonym/) {
+        labels << literal.toLowerCase()
+      } 
     }
   }
 
