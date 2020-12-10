@@ -24,7 +24,7 @@ import org.semanticweb.owlapi.manchestersyntax.renderer.*
 import org.semanticweb.owlapi.reasoner.structural.*
 
 // update old RBO iri to new one
-def convertIRI = { 'http://purl.obolibrary.org/obo/RBO_' + it.split(':').last() }
+def convertIRI = { 'http://purl.obolibrary.org/obo/RBO_' + it.toString().split(':').last() }
 def extractLabels = { cl, o ->
   def labels = []
 
@@ -56,18 +56,18 @@ def newRBO = manager.loadOntologyFromOntologyDocument(new File(newOntologyPath))
 // First we will build a dictionary of classes/iris in the new RBO
 def newRBOClassMap = [:]
 newRBO.getClassesInSignature(true).each { cl ->
-  newRBOClassMap[cl.getIRI()] = extractLabels(cl, newRBO)
+  newRBOClassMap[cl.getIRI().toString()] = extractLabels(cl, newRBO)
 }
 
 def oldRBOClassMap = [:]
 oldRBO.getClassesInSignature(false).each { cl ->
   def iri = cl.getIRI()
   if(iri =~ /RBO/) {
-    def labels = extractLabels(cl)
+    def labels = extractLabels(cl, oldRBO)
     oldRBOClassMap[iri] = [
       labels: labels,
-      hasSuperclassInNewRBO: oldRBO.getSubClassAxiomsForSubClass(cl, oldRBO).any { scAxiom ->
-        newRBOClassMap.containsKey(scAxiom.getSuperClass().getIRI())
+      hasSuperclassInNewRBO: oldRBO.getSubClassAxiomsForSubClass(cl).any { scAxiom ->
+        newRBOClassMap.containsKey(scAxiom.getSuperClass().getIRI().toString())
       },
       matchingLabelInNewRBO: newRBOClassMap.any { nIri, nLabels -> nLabels.any { l -> labels.contains(l)} }, // bad time complexity
       matchingIRIInNewRBO: newRBOClassMap.containsKey(convertIRI(iri))
@@ -77,14 +77,14 @@ oldRBO.getClassesInSignature(false).each { cl ->
 
 println "Classes in old RBO: ${oldRBOClassMap.size()}"
 
-def matchingIRI = oldRBOClassMap.findAll { it.matchingIRIInNewRBO }
+def matchingIRI = oldRBOClassMap.findAll { it.getValue().matchingIRIInNewRBO }
 println "Classes in old RBO with matching (transformed) IRI in new RBO: ${matchingIRI.size()}"
  
-def matchingLabel = oldRBOClassMap.findAll { it.matchingLabelInNewRBO }
+def matchingLabel = oldRBOClassMap.findAll { it.getValue().matchingLabelInNewRBO }
 println "Classes in old RBO which have a label or synonym that exactly matches a class in new RBO: ${matchingLabel.size()}"
 
-def matchingSuperclass = oldRBOClassMap.findAll { it.hasSuperclassInNewRBO }
-println "Classes in old RBO whose superclass still exists in new RBO: ${matchingSuperclass.size()}"
+def matchingSuperclass = oldRBOClassMap.findAll { it.getValue().hasSuperclassInNewRBO }
+println "Classes in old RBO whose direct superclass still exists in new RBO: ${matchingSuperclass.size()}"
 
-def noMatches = oldRBOClassMap.findAll { it.hasSuperclassInNewRBO || it.matchingIRIInNewRBO || it.matchingLabelInNewRBO }
+def noMatches = oldRBOClassMap.findAll { i, v -> v.hasSuperclassInNewRBO || v.matchingIRIInNewRBO || v.matchingLabelInNewRBO }
 println "Classes in old RBO which have no matching IRI, label, or superclass in new RBO: ${noMatches.size()}"
