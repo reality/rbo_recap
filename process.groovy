@@ -34,8 +34,6 @@ def extractLabels = { cl, o ->
     if(val instanceof OWLLiteral) {
       def literal = val.getLiteral()
       if(property.isLabel()) {
-        labels = [literal] + labels
-      } else {
         labels << literal
       }
     }
