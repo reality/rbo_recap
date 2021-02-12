@@ -90,13 +90,18 @@ newRBO.getClassesInSignature(true).each { cl ->
 def report = []
 
 def oldRBOClassMap = [:]
-def addCounter = 100
+def addCounter = 501
 
 def toAdd = [:]
 
+println 'adding new temporary class for parental use'
+def newParent = 'obo:RBO_00000500'
+toAdd[newParent] = "obo:RBO_00000${addCounter}\ttemporary parent\t\t\t\ttemporary parent for old rbo classes"
+report << 'added missing class ' + newParent
+
 oldRBO.getClassesInSignature(false).each { cl ->
   def iri = cl.getIRI()
-  if(iri =~ /RBO/) {
+  if(newRBOClassMap.containsKey(iri.toString())) { return; } // already have it in there
     def labels = extractLabels(cl, oldRBO)
     oldRBOClassMap[iri] = [
       labels: labels,
@@ -110,31 +115,55 @@ oldRBO.getClassesInSignature(false).each { cl ->
       matchingLabelInNewRBO: newRBOClassMap.any { nIri, nLabels -> nLabels.any { l -> labels.contains(l)} }, // bad time complexity
       matchingIRIInNewRBO: newRBOClassMap.containsKey(convertIRI(iri))
     ]
+
     if(!oldRBOClassMap[iri].matchingLabelInNewRBO) {
-      toAdd[iri] = "obo:RBO_00000${addCounter}\t${labels[0]}\t\t\t\t${oldRBOClassMap[iri].desc}"
+      def newClass = (0,19).collect { '' }
+      newClass[0] = "obo:RBO_00000${addCounter}"
+      newClass[1] = labels[0]
+      newClass[5] = oldRBOClassMap[iri].desc
+      newClass[8] = 'Automatically re-added/shadowed by rbo_recap (Luke Slater)'
+      newClass[9] = 'Paul Schofield'
+      newClass[16] = labels[1..labels.size()].join(',')
+      newClass[15] = newParent
+
+      if(!(iri =~ /RBO/)) {
+        def oboid = iri.tokenize('/').last()
+        newClass[19] = oboid
       report << 'added missing class obo:RBO_00000 ' + addCounter
+      } else {
+        report << 'added missing old obo:RBO_00000 ' + addCounter
+      }
+
+      toAdd[iri] = newClass.join('\t')
       addCounter++
-    }
-  } else {
-    // here we process the imports 
-    def oboid = iri.tokenize('/').last()
-    def (oid, id) = oboid.split('_')
-    if(importedTerms.containsKey(oid) && !importedTerms[oid].contains(oboid)) {
-      //new File('../RBO/src/ontology/imports/'+oid.toLowerCase()+'_terms.txt').text += '\nobo:' + oboid
-      importedTerms[oid] << oboid
-      report << 'Added import for ' + oboid
-    } else if(!importedTerms.containsKey(oid)) {
-      //new File('../RBO/src/ontology/imports/'+oid.toLowerCase()+'_terms.txt').text = 'obo:' + oboid
-      importedTerms[oid] = [oboid]
-      report << 'Added import for ' + oboid
     }
   }
 }
 
+/*
+ * 0: Ontology ID	
+ * 1: Label	
+ * 2: editor preferred term	
+ * 3: has curation status	
+ * 4: alternative term	
+ * 5: definition
+ * 6: definition source	
+ * 7: example of usage
+ * 8 editor note	
+ * 9: term editor	
+ * 10: curator note	
+ * 11: ontology term requester	
+ * 12: term tracker item	
+ * 13: Logical Type	
+ * 14: Class Type	
+ * 15: Parent	
+ * 16: exact synonym	
+ * 17: Has Subset	
+ * 18: Member of superset 	
+ * 19: db xref															
+ */
+
 toAdd.each { k, v ->
-  if(oldRBOClassMap[k].parent && toAdd[oldRBOClassMap[k].parent]) {
-   v+='\t\t\t\t\t\t\t\t\t\t'+toAdd[oldRBOClassMap[k].parent].split('\t')[0]
-  }
   new File('../RBO/src/templates/RBO_classes.tsv').text += '\n' + v
 }
 
