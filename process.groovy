@@ -48,7 +48,7 @@ def extractLabels = { cl, o ->
       OWLAnnotationValue val = anno.getValue()
       if(val instanceof OWLLiteral) {
         def literal = val.getLiteral()
-        if(property.isLabel() || property =~ /Synonym/) {
+        if(property.isLabel() || property =~ /Synonym/ || property.toString() == '<obo:IAO_0000111>' || property.toString() == '<http://purl.obolibrary.org/obo/IAO_0000111>') {
           labels << literal.toLowerCase()
         } 
       }
@@ -100,43 +100,48 @@ toAdd[newParent] = "obo:RBO_00000${addCounter}\ttemporary parent\t\t\t\ttemporar
 report << 'added missing class ' + newParent
 
 oldRBO.getClassesInSignature(false).each { cl ->
-  def iri = cl.getIRI()
-  if(newRBOClassMap.containsKey(iri.toString())) { return; } // already have it in there
-    def labels = extractLabels(cl, oldRBO)
-    oldRBOClassMap[iri] = [
-      labels: labels,
-      desc: extractDescription(cl, oldRBO),
-      hasSuperclassInNewRBO: oldRBO.getSubClassAxiomsForSubClass(cl).any { scAxiom ->
-        newRBOClassMap.containsKey(scAxiom.getSuperClass().getIRI().toString())
-      },
-      parent: oldRBO.getSubClassAxiomsForSubClass(cl).collect { scAxiom ->
-        scAxiom.getSuperClass().getIRI().toString()
-      }[0],
-      matchingLabelInNewRBO: newRBOClassMap.any { nIri, nLabels -> nLabels.any { l -> labels.contains(l)} }, // bad time complexity
-      matchingIRIInNewRBO: newRBOClassMap.containsKey(convertIRI(iri))
-    ]
+  def iri = cl.getIRI().toString()
+  if(newRBOClassMap.containsKey(iri)) { return; } // already have it in there
+  def labels = extractLabels(cl, oldRBO)
+  if(!labels[0]) { return; }
+  oldRBOClassMap[iri] = [
+    labels: labels,
+    desc: extractDescription(cl, oldRBO),
+    hasSuperclassInNewRBO: oldRBO.getSubClassAxiomsForSubClass(cl).any { scAxiom ->
+      newRBOClassMap.containsKey(scAxiom.getSuperClass().getIRI().toString())
+    },
+    parent: oldRBO.getSubClassAxiomsForSubClass(cl).collect { scAxiom ->
+      scAxiom.getSuperClass().getIRI().toString()
+    }[0],
+    matchingLabelInNewRBO: newRBOClassMap.any { nIri, nLabels -> nLabels.any { l -> labels.contains(l)} }, // bad time complexity
+    matchingIRIInNewRBO: newRBOClassMap.containsKey(convertIRI(iri)),
+    newIRI: ''
+  ]
 
-    if(!oldRBOClassMap[iri].matchingLabelInNewRBO) {
-      def newClass = (0,19).collect { '' }
-      newClass[0] = "obo:RBO_00000${addCounter}"
-      newClass[1] = labels[0]
-      newClass[5] = oldRBOClassMap[iri].desc
-      newClass[8] = 'Automatically re-added/shadowed by rbo_recap (Luke Slater)'
-      newClass[9] = 'Paul Schofield'
-      newClass[16] = labels[1..labels.size()].join(',')
-      newClass[15] = newParent
-
-      if(!(iri =~ /RBO/)) {
-        def oboid = iri.tokenize('/').last()
-        newClass[19] = oboid
-      report << 'added missing class obo:RBO_00000 ' + addCounter
-      } else {
-        report << 'added missing old obo:RBO_00000 ' + addCounter
-      }
-
-      toAdd[iri] = newClass.join('\t')
-      addCounter++
+  if(!oldRBOClassMap[iri].matchingLabelInNewRBO) {
+    def newClass = (0..19).collect { '' }
+    newClass[0] = "obo:RBO_00000${addCounter}"
+    newClass[1] = labels[0]
+    newClass[5] = oldRBOClassMap[iri].desc
+    //newClass[8] = 'Automatically re-added/shadowed by rbo_recap (Luke Slater)' // apparently it cannot handle editor note!
+    newClass[9] = 'Paul Schofield'
+    if(labels.size() > 1) {
+      newClass[16] = labels[1..labels.size()-1].join(',')
     }
+    newClass[15] = newParent
+
+    oldRBOClassMap[iri].newIRI = newClass[0]
+
+    if(!(iri =~ /RBO/)) {
+      def oboid = iri.tokenize('/').last()
+      newClass[19] = oboid
+      report << 're-added shadow class '+ iri + ' "'+labels[0]+'" class obo:RBO_00000 ' + addCounter
+    } else {
+      report << 'added missing old class: "'+labels[0]+'" import obo:RBO_00000 ' + addCounter
+    }
+
+    toAdd[iri] = newClass
+    addCounter++
   }
 }
 
@@ -163,8 +168,23 @@ oldRBO.getClassesInSignature(false).each { cl ->
  * 19: db xref															
  */
 
+
+oldRBOClassMap.each { iri, info ->
+  if(info.parent) {
+    def newParentID = info.parent
+    if(oldRBOClassMap[newParentID]) {
+      if(oldRBOClassMap[info.parent].newIRI != '') {
+        newParentID = oldRBOClassMap[info.parent].newIRI
+    if(toAdd[iri]) {
+      toAdd[iri][15] = newParentID
+      report << 'gave "'+info.labels[0]+'" class ('+info.newIRI+') parent: ' + newParentID
+    }
+  }
+}
+}}
+
 toAdd.each { k, v ->
-  new File('../RBO/src/templates/RBO_classes.tsv').text += '\n' + v
+  new File('../RBO/src/templates/RBO_classes.tsv').text += '\n' + v.join('\t')
 }
 
 new File('report.txt').text = report.join('\n')
